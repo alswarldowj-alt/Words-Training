@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import ReactDOM from 'react-dom/client';
+import * as XLSX from 'xlsx';
 
 // --- Types ---
 interface GameItem {
@@ -162,6 +163,7 @@ const ConfigView: React.FC<{
 }> = ({ words, onSave, onLoadPhotos, onBack, photoCount }) => {
   const [tempWords, setTempWords] = useState<string[]>([...words]);
   const [isSaved, setIsSaved] = useState(false);
+  const excelInputRef = useRef<HTMLInputElement>(null);
 
   const handleInputChange = (index: number, value: string) => {
     const next = [...tempWords];
@@ -189,6 +191,44 @@ const ConfigView: React.FC<{
     setTimeout(() => setIsSaved(false), 2000);
   };
 
+  const handleExcelImport = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (evt) => {
+      try {
+        const bstr = evt.target?.result;
+        const wb = XLSX.read(bstr, { type: 'binary' });
+        const wsname = wb.SheetNames[0];
+        const ws = wb.Sheets[wsname];
+        const data = XLSX.utils.sheet_to_json(ws, { header: 1 }) as any[][];
+        
+        // Data format: data[0] is header, rows follow
+        // Second column (index 1) is the word
+        const wordsFromExcel = data
+          .slice(1) // Remove header row
+          .map(row => row[1]) // Get "Word" column
+          .filter(w => w && String(w).trim() !== '') // Clean empty values
+          .map(w => String(w).trim());
+
+        if (wordsFromExcel.length > 0) {
+          setTempWords(wordsFromExcel);
+          setIsSaved(false);
+          alert(`Successfully imported ${wordsFromExcel.length} words!`);
+        } else {
+          alert('No words found in the Excel file. Please ensure the second column contains word names.');
+        }
+      } catch (error) {
+        console.error('Excel Import Error:', error);
+        alert('Failed to parse Excel file. Please ensure it is a valid .xlsx or .xls file.');
+      }
+      // Reset input value so same file can be imported again
+      if (excelInputRef.current) excelInputRef.current.value = '';
+    };
+    reader.readAsBinaryString(file);
+  };
+
   return (
     <div className="flex flex-col h-full p-6 animate-fadeIn max-w-4xl mx-auto">
       <header className="flex items-center justify-between mb-8">
@@ -203,15 +243,31 @@ const ConfigView: React.FC<{
         <section className="bg-white rounded-[40px] p-8 shadow-xl border-b-8 border-sky-100 flex flex-col overflow-hidden">
           <div className="flex items-center justify-between mb-4">
             <h3 className="text-2xl font-black text-sky-700">1. Edit Word List</h3>
-            <button 
-              onClick={() => {
-                setTempWords([...DEFAULT_WORDS]);
-                setIsSaved(false);
-              }}
-              className="text-sky-400 hover:text-sky-600 font-bold text-sm underline"
-            >
-              Restore Defaults
-            </button>
+            <div className="flex items-center gap-2">
+              <input 
+                type="file" 
+                ref={excelInputRef} 
+                className="hidden" 
+                accept=".xlsx, .xls" 
+                onChange={handleExcelImport}
+              />
+              <button 
+                onClick={() => excelInputRef.current?.click()}
+                className="text-emerald-500 hover:text-emerald-700 font-bold text-sm flex items-center gap-1 bg-emerald-50 px-3 py-1 rounded-lg transition"
+                title="Import words from Excel (2nd column)"
+              >
+                📊 Import Excel
+              </button>
+              <button 
+                onClick={() => {
+                  setTempWords([...DEFAULT_WORDS]);
+                  setIsSaved(false);
+                }}
+                className="text-sky-400 hover:text-sky-600 font-bold text-sm underline"
+              >
+                Restore Defaults
+              </button>
+            </div>
           </div>
           <div className="flex-1 overflow-y-auto pr-2 custom-scrollbar space-y-3">
             {tempWords.map((w, i) => (
@@ -742,7 +798,7 @@ const SpellingModeView: React.FC<{
           <button onClick={onBack} className="bg-green-100 p-2 rounded-xl text-green-600 font-black hover:bg-green-200 transition">← Back</button>
           <button 
             onClick={() => initOrder(!isRandomMode)}
-            className={`px-4 py-2 rounded-xl font-black text-xs shadow transition ${isRandomMode ? 'bg-green-600 text-white' : 'bg-white text-green-600 border-2 border-green-100'}`}
+            className={`px-4 py-2 rounded-xl font-black text-xs shadow transition ${isRandomMode ? 'bg-green-600 text-white' : 'bg-white text-green-600 border-2 border-orange-100'}`}
           >
             {isRandomMode ? '🔀 Random' : '📋 Sequence'}
           </button>
