@@ -368,6 +368,7 @@ const DragModeView: React.FC<{
   const [errorWord, setErrorWord] = useState<string | null>(null);
   const [showFinishedPopup, setShowFinishedPopup] = useState(false);
   
+  const [touchStartPos, setTouchStartPos] = useState<{x: number, y: number, word: string} | null>(null);
   const [touchDrag, setTouchDrag] = useState<{word: string, x: number, y: number} | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const dropTargetsRef = useRef<Map<string, HTMLDivElement>>(new Map());
@@ -414,16 +415,38 @@ const DragModeView: React.FC<{
   const handleTouchStart = (e: React.TouchEvent, word: string) => {
     voice.ensureContext();
     const touch = e.touches[0];
-    setTouchDrag({ word, x: touch.clientX, y: touch.clientY });
+    setTouchStartPos({ x: touch.clientX, y: touch.clientY, word });
   };
 
   const handleTouchMove = (e: React.TouchEvent) => {
-    if (!touchDrag) return;
-    const touch = e.touches[0];
-    setTouchDrag({ ...touchDrag, x: touch.clientX, y: touch.clientY });
+    if (touchDrag) {
+      // Prevent scrolling if already dragging
+      if (e.cancelable) e.preventDefault();
+      const touch = e.touches[0];
+      setTouchDrag({ ...touchDrag, x: touch.clientX, y: touch.clientY });
+      return;
+    }
+
+    if (touchStartPos) {
+      const touch = e.touches[0];
+      const dx = Math.abs(touch.clientX - touchStartPos.x);
+      const dy = Math.abs(touch.clientY - touchStartPos.y);
+
+      // Detect if user intended to drag or scroll
+      // If horizontal movement is significant, or total movement is larger than a threshold, start dragging
+      if (dx > 20 || (dx > 8 && dx > dy)) {
+        setTouchDrag({ word: touchStartPos.word, x: touch.clientX, y: touch.clientY });
+        setTouchStartPos(null);
+        if (e.cancelable) e.preventDefault();
+      } else if (dy > 15) {
+        // It's a vertical scroll, cancel potential drag detection
+        setTouchStartPos(null);
+      }
+    }
   };
 
   const handleTouchEnd = (e: React.TouchEvent) => {
+    setTouchStartPos(null);
     if (!touchDrag) return;
     const { word, x, y } = touchDrag;
     setTouchDrag(null);
@@ -456,7 +479,7 @@ const DragModeView: React.FC<{
       </header>
 
       <div className="flex-1 grid grid-cols-12 gap-3 min-h-0">
-        <div className="col-span-10 overflow-y-auto pr-2 custom-scrollbar">
+        <div className="col-span-9 md:col-span-10 overflow-y-auto pr-2 custom-scrollbar">
           <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3 pb-4">
             {displayItems.map(item => {
               const isMatched = matchedIds.includes(item.id);
@@ -484,7 +507,8 @@ const DragModeView: React.FC<{
             })}
           </div>
         </div>
-        <div className="col-span-2 bg-white rounded-2xl p-3 flex flex-col shadow-sm border-t-8 border-sky-400 min-h-0">
+        
+        <div className="col-span-3 md:col-span-2 bg-white rounded-2xl p-3 flex flex-col shadow-sm border-t-8 border-sky-400 min-h-0">
           <h3 className="text-xs font-black text-sky-700 mb-3 flex items-center gap-2"><span>🔠</span> Bank</h3>
           <div className="flex-1 overflow-y-auto space-y-2 pr-1 custom-scrollbar">
             {shuffledWords.map(word => (
@@ -493,8 +517,7 @@ const DragModeView: React.FC<{
                 draggable 
                 onDragStart={e => { voice.ensureContext(); e.dataTransfer.setData("word", word); }}
                 onTouchStart={e => handleTouchStart(e, word)}
-                style={{ touchAction: 'none' }}
-                className={`bg-sky-500 hover:bg-sky-600 text-white font-black py-3 px-2 rounded-xl text-center shadow-md text-[12px] cursor-grab transition-all active:scale-95 active:rotate-2 ${errorWord === word ? 'animate-shake bg-red-500' : ''}`}
+                className={`bg-sky-500 hover:bg-sky-600 text-white font-black py-4 px-2 rounded-xl text-center shadow-md text-[12px] md:text-[14px] cursor-grab transition-all active:scale-95 active:rotate-2 select-none ${errorWord === word ? 'animate-shake bg-red-500' : ''}`}
               >
                 {word}
               </div>
@@ -629,6 +652,7 @@ const SpellingModeView: React.FC<{
   const [status, setStatus] = useState<'idle' | 'correct' | 'wrong'>('idle');
   const [showFinishedPopup, setShowFinishedPopup] = useState(false);
   const [wrongVoicePlayed, setWrongVoicePlayed] = useState(false);
+  const [isUpperCase, setIsUpperCase] = useState(true);
 
   const currentIndex = playOrder[orderPointer];
   const currentItem = gameItems[currentIndex];
@@ -710,6 +734,7 @@ const SpellingModeView: React.FC<{
       voice.ensureContext();
       if (e.key.length === 1 && /[a-zA-Z]/.test(e.key)) handleInput(e.key);
       else if (e.key === 'Backspace') handleBackspace();
+      else if (e.key === 'Shift') setIsUpperCase(prev => !prev);
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
@@ -719,7 +744,7 @@ const SpellingModeView: React.FC<{
   const keyboardRows = [
     ['Q', 'W', 'E', 'R', 'T', 'Y', 'U', 'I', 'O', 'P'],
     ['A', 'S', 'D', 'F', 'G', 'H', 'J', 'K', 'L'],
-    ['Z', 'X', 'C', 'V', 'B', 'N', 'M', 'Delete']
+    ['Shift', 'Z', 'X', 'C', 'V', 'B', 'N', 'M', 'Delete']
   ];
 
   return (
@@ -760,23 +785,30 @@ const SpellingModeView: React.FC<{
       <div className="w-full max-w-2xl bg-white/50 backdrop-blur-sm p-4 rounded-[32px] shadow-inner border-2 border-white space-y-2">
         {keyboardRows.map((row, rIdx) => (
           <div key={rIdx} className="flex justify-center gap-1 md:gap-2">
-            {row.map(key => (
-              <button
-                key={key}
-                onClick={() => {
-                  voice.ensureContext();
-                  if (key === 'Delete') handleBackspace();
-                  else handleInput(key);
-                }}
-                className={`flex-1 py-3 md:py-4 rounded-xl font-black text-sm md:text-xl shadow-md border-b-4 transition active:translate-y-1 active:shadow-none ${
-                  key === 'Delete' 
-                  ? 'bg-red-400 border-red-600 text-white' 
-                  : 'bg-sky-400 border-sky-600 text-white hover:bg-sky-500'
-                }`}
-              >
-                {key === 'Delete' ? '⌫' : key}
-              </button>
-            ))}
+            {row.map(key => {
+              const displayKey = (key === 'Shift' || key === 'Delete') ? key : (isUpperCase ? key.toUpperCase() : key.toLowerCase());
+              
+              return (
+                <button
+                  key={key}
+                  onClick={() => {
+                    voice.ensureContext();
+                    if (key === 'Delete') handleBackspace();
+                    else if (key === 'Shift') setIsUpperCase(!isUpperCase);
+                    else handleInput(displayKey);
+                  }}
+                  className={`flex-1 py-3 md:py-4 rounded-xl font-black text-sm md:text-xl shadow-md border-b-4 transition active:translate-y-1 active:shadow-none ${
+                    key === 'Delete' 
+                    ? 'bg-red-400 border-red-600 text-white min-w-[60px]' 
+                    : key === 'Shift'
+                    ? `${isUpperCase ? 'bg-indigo-600 border-indigo-800' : 'bg-indigo-300 border-indigo-500'} text-white min-w-[60px]`
+                    : 'bg-sky-400 border-sky-600 text-white hover:bg-sky-500'
+                  }`}
+                >
+                  {key === 'Delete' ? '⌫' : key === 'Shift' ? (isUpperCase ? '⬆️' : '⬇️') : displayKey}
+                </button>
+              );
+            })}
           </div>
         ))}
       </div>
