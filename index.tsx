@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import ReactDOM from 'react-dom/client';
 import * as XLSX from 'xlsx';
@@ -369,7 +368,6 @@ const DragModeView: React.FC<{
   const [errorWord, setErrorWord] = useState<string | null>(null);
   const [showFinishedPopup, setShowFinishedPopup] = useState(false);
   
-  // 触屏拖拽状态
   const [touchDrag, setTouchDrag] = useState<{word: string, x: number, y: number} | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const dropTargetsRef = useRef<Map<string, HTMLDivElement>>(new Map());
@@ -413,7 +411,6 @@ const DragModeView: React.FC<{
     }
   };
 
-  // 触屏处理逻辑
   const handleTouchStart = (e: React.TouchEvent, word: string) => {
     voice.ensureContext();
     const touch = e.touches[0];
@@ -430,8 +427,6 @@ const DragModeView: React.FC<{
     if (!touchDrag) return;
     const { word, x, y } = touchDrag;
     setTouchDrag(null);
-
-    // 碰撞检测：手指落点是否在任何目标卡片内
     for (const [id, el] of dropTargetsRef.current.entries()) {
       const rect = el.getBoundingClientRect();
       if (x >= rect.left && x <= rect.right && y >= rect.top && y <= rect.bottom) {
@@ -469,7 +464,6 @@ const DragModeView: React.FC<{
               return (
                 <div 
                   key={item.id}
-                  // Fix for Error: ensure the ref callback returns void to comply with Ref type definition.
                   ref={el => {
                     if (el) dropTargetsRef.current.set(item.id, el);
                     else dropTargetsRef.current.delete(item.id);
@@ -509,7 +503,6 @@ const DragModeView: React.FC<{
         </div>
       </div>
 
-      {/* 触屏拖拽时的悬浮元素 */}
       {touchDrag && (
         <div 
           className="fixed pointer-events-none bg-sky-600 text-white font-black py-4 px-6 rounded-2xl shadow-2xl text-xl z-[9999] opacity-90 transition-none"
@@ -526,7 +519,6 @@ const DragModeView: React.FC<{
   );
 };
 
-// ... ChoiceModeView 和 SpellingModeView 保持原有代码，因为它们主要依赖按钮点击，触屏兼容性本身较好 ...
 const ChoiceModeView: React.FC<{ 
   onBack: () => void, 
   localImageMap: Record<string, string>,
@@ -701,25 +693,37 @@ const SpellingModeView: React.FC<{
     }
   };
 
+  const handleBackspace = () => {
+    if (status === 'correct' || !currentItem) return;
+    const newInput = [...userInput];
+    if (!fixedIndices.includes(focusedIndex) && currentItem.word[focusedIndex] !== ' ') {
+      newInput[focusedIndex] = '';
+      setUserInput(newInput);
+      setStatus('idle');
+      setWrongVoicePlayed(false);
+    }
+  };
+
   useEffect(() => {
     if (!currentItem) return;
     const handleKeyDown = (e: KeyboardEvent) => {
       voice.ensureContext();
       if (e.key.length === 1 && /[a-zA-Z]/.test(e.key)) handleInput(e.key);
-      else if (e.key === 'Backspace') {
-        const newInput = [...userInput];
-        if (!fixedIndices.includes(focusedIndex) && currentItem.word[focusedIndex] !== ' ') {
-          newInput[focusedIndex] = '';
-          setUserInput(newInput);
-        }
-      }
+      else if (e.key === 'Backspace') handleBackspace();
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [focusedIndex, userInput, status, currentItem?.word, wrongVoicePlayed]);
 
+  // --- 虚拟键盘布局 ---
+  const keyboardRows = [
+    ['Q', 'W', 'E', 'R', 'T', 'Y', 'U', 'I', 'O', 'P'],
+    ['A', 'S', 'D', 'F', 'G', 'H', 'J', 'K', 'L'],
+    ['Z', 'X', 'C', 'V', 'B', 'N', 'M', 'Delete']
+  ];
+
   return (
-    <div className="flex flex-col h-full items-center justify-center gap-8 p-4">
+    <div className="flex flex-col h-full items-center justify-center gap-6 p-4 overflow-hidden">
       <header className="w-full flex justify-between items-center absolute top-3 left-0 px-6">
         <div className="flex items-center gap-3">
           <button onClick={() => { voice.ensureContext(); onBack(); }} className="bg-green-100 p-2 rounded-xl text-green-600 font-black hover:bg-green-200 transition">← Back</button>
@@ -732,26 +736,56 @@ const SpellingModeView: React.FC<{
         </div>
         <span className="text-green-600 font-black text-xl">{orderPointer + 1} / {gameItems.length}</span>
       </header>
-      <div className={`w-80 h-80 bg-white rounded-[40px] shadow-2xl border-8 p-4 transition-all ${status === 'correct' ? 'border-green-400 scale-105' : status === 'wrong' ? 'border-red-400 animate-shake' : 'border-white'}`}>
+
+      <div className={`w-56 h-56 md:w-80 md:h-80 bg-white rounded-[40px] shadow-2xl border-8 p-4 transition-all ${status === 'correct' ? 'border-green-400 scale-105' : status === 'wrong' ? 'border-red-400 animate-shake' : 'border-white'}`}>
         <img src={localImageMap[currentItem.word] || currentItem.imageUrl} className="w-full h-full object-cover rounded-[20px]" alt="" />
       </div>
-      <div className="flex flex-wrap justify-center gap-2 max-w-2xl px-4">
+
+      <div className="flex flex-wrap justify-center gap-1 md:gap-2 max-w-2xl px-4">
         {userInput.map((char, idx) => {
           const isHint = fixedIndices.includes(idx);
-          return currentItem.word[idx] === ' ' ? <div key={idx} className="w-6" /> : (
-            <button key={idx} onClick={() => { voice.ensureContext(); setFocusedIndex(idx); }} className={`w-12 h-16 rounded-xl border-b-4 flex items-center justify-center text-3xl font-black transition-all ${focusedIndex === idx ? 'bg-green-100 border-green-500 scale-110 shadow-lg' : isHint ? 'bg-orange-50 border-orange-200' : 'bg-white border-gray-200 text-gray-700'} ${isHint ? 'text-orange-500' : ''}`}>
+          return currentItem.word[idx] === ' ' ? <div key={idx} className="w-4 md:w-6" /> : (
+            <button key={idx} onClick={() => { voice.ensureContext(); setFocusedIndex(idx); }} className={`w-9 h-12 md:w-12 md:h-16 rounded-xl border-b-4 flex items-center justify-center text-xl md:text-3xl font-black transition-all ${focusedIndex === idx ? 'bg-green-100 border-green-500 scale-110 shadow-lg' : isHint ? 'bg-orange-50 border-orange-200' : 'bg-white border-gray-200 text-gray-700'} ${isHint ? 'text-orange-500' : ''}`}>
               {char || '_'}
             </button>
           );
         })}
       </div>
-      <p className="font-bold italic h-6 animate-pulse">
+
+      <p className="font-bold italic h-6 animate-pulse text-sm md:text-base">
         {status === 'correct' ? <span className="text-green-500">Correct! Well done! 🌟</span> : showHint ? <span className="text-orange-500">Answer: {currentItem.word}</span> : status === 'wrong' ? <span className="text-red-500">Wrong! Try again! 🧐</span> : <span className="text-green-500 opacity-60">Type to complete!</span>}
       </p>
+
+      {/* --- 虚拟键盘 --- */}
+      <div className="w-full max-w-2xl bg-white/50 backdrop-blur-sm p-4 rounded-[32px] shadow-inner border-2 border-white space-y-2">
+        {keyboardRows.map((row, rIdx) => (
+          <div key={rIdx} className="flex justify-center gap-1 md:gap-2">
+            {row.map(key => (
+              <button
+                key={key}
+                onClick={() => {
+                  voice.ensureContext();
+                  if (key === 'Delete') handleBackspace();
+                  else handleInput(key);
+                }}
+                className={`flex-1 py-3 md:py-4 rounded-xl font-black text-sm md:text-xl shadow-md border-b-4 transition active:translate-y-1 active:shadow-none ${
+                  key === 'Delete' 
+                  ? 'bg-red-400 border-red-600 text-white' 
+                  : 'bg-sky-400 border-sky-600 text-white hover:bg-sky-500'
+                }`}
+              >
+                {key === 'Delete' ? '⌫' : key}
+              </button>
+            ))}
+          </div>
+        ))}
+      </div>
+
       <div className="flex gap-4">
         <button disabled={orderPointer === 0} onClick={() => { voice.ensureContext(); setOrderPointer(orderPointer - 1); }} className="bg-green-400 disabled:opacity-30 text-white px-8 py-3 rounded-2xl font-black shadow-lg hover:scale-105 active:scale-95 transition">Prev</button>
         <button disabled={orderPointer === playOrder.length - 1} onClick={() => { voice.ensureContext(); setOrderPointer(orderPointer + 1); }} className="bg-green-400 disabled:opacity-30 text-white px-8 py-3 rounded-2xl font-black shadow-lg hover:scale-105 active:scale-95 transition">Next</button>
       </div>
+
       {showFinishedPopup && <FinishedPopup modeName="Spelling Mode" themeColor="#22c55e" onRestart={resetGame} onStay={() => setShowFinishedPopup(false)} onExit={onBack} />}
     </div>
   );
